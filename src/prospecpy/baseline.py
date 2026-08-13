@@ -97,7 +97,7 @@ def baseline_correction(baseline_points, raw_wavenumber, raw_absorbance):
 
 
 # arPLS 6.19
-def arpls_baseline(raw_absorbance, lam=1e5, ratio=1e-6, max_iter=50):
+def arpls_baseline(raw_absorbance, lam=1e5, ratio=1e-6, max_iter=100):
     """
     Estimate a baseline using asymmetrically reweighted penalized least squares.
 
@@ -149,7 +149,7 @@ def arpls_baseline_second_deriv_weights(  # peak-position guided arPLS
     peak_wavenumbers,
     lam=1e5,
     ratio=1e-6,
-    max_iter=50,
+    max_iter=100,
     peak_window=35,
     peak_weight=0.3,
     alpha=0.8,

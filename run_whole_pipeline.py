@@ -188,13 +188,13 @@ def parse_args() -> argparse.Namespace:
     input_group.add_argument(
         "--run-native-arpls",
         action="store_true",
-        help="Optionally run Erni's ProSpecPy arPLS workflow from raw pD6 data first.",
+        help="Optionally run Erni's ProSpecPy arPLS workflow from raw pH6 data first.",
     )
     input_group.add_argument(
         "--workflow-root",
         type=Path,
         default=Path("/Users/lili/Desktop/IC irp/ProSpecPy-irp-initial-exploration"),
-        help="Root containing data/opus_files/pD6 and data/opus_files/water_vapor.",
+        help="Root containing data/opus_files/pH6 and data/opus_files/water_vapor.",
     )
     input_group.add_argument(
         "--source-repo",
@@ -216,7 +216,7 @@ def parse_args() -> argparse.Namespace:
     fitting_group = parser.add_argument_group("fitting")
     fitting_group.add_argument("--analysis-min-cm1", type=float, default=ANALYSIS_MIN_CM1)
     fitting_group.add_argument("--analysis-max-cm1", type=float, default=ANALYSIS_MAX_CM1)
-    fitting_group.add_argument("--bound-profile-id", default="pD6_bounds_v0.1")
+    fitting_group.add_argument("--bound-profile-id", default="pH6_bounds_v0.1")
     fitting_group.add_argument("--peak-prominence-fraction", type=float, default=0.08)
     fitting_group.add_argument("--min-peak-distance-cm1", type=float, default=8.0)
     fitting_group.add_argument("--max-peaks", type=int, default=8)
@@ -229,7 +229,7 @@ def parse_args() -> argparse.Namespace:
     arpls_group.add_argument("--config-source", default="Erni workflow_demo.ipynb Week 6 default")
     arpls_group.add_argument("--lam", type=float, default=1e5)
     arpls_group.add_argument("--ratio", type=float, default=1e-6)
-    arpls_group.add_argument("--max-iter", type=int, default=50)
+    arpls_group.add_argument("--max-iter", type=int, default=100)
     arpls_group.add_argument("--peak-threshold", type=float, default=0.35)
     arpls_group.add_argument("--peak-window", type=int, default=35)
     arpls_group.add_argument("--peak-weight", type=float, default=0.3)
@@ -421,7 +421,7 @@ def write_candidate_peaks(source: Path, dest: Path) -> None:
 
 def run_native_arpls(args: argparse.Namespace, native_output: Path) -> None:
     source = args.source_repo / "src"
-    sample_dir = args.workflow_root / "data" / "opus_files" / "pD6"
+    sample_dir = args.workflow_root / "data" / "opus_files" / "pH6"
     water_dir = args.workflow_root / "data" / "opus_files" / "water_vapor"
     for required in (source, sample_dir, water_dir):
         if not required.exists():

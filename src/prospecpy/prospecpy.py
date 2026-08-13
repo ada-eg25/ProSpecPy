@@ -358,7 +358,7 @@ class ProSpecPy:  # class object running to organize script from the src directo
         self,
         lam=1e5,
         ratio=1e-6,
-        max_iter=50,
+        max_iter=100,
         save=True,
         showplot=True,
         verbose=True,
