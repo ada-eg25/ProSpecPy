@@ -144,3 +144,8 @@ data/
 
 # MacOS
 .DS_Store
+
+# Generated outputs
+manual_comparison_results/
+output_plots/
+peak_fitting_results/
