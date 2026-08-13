@@ -96,45 +96,103 @@ def baseline_correction(baseline_points, raw_wavenumber, raw_absorbance):
     return baseline_corrected_abs
 
 
-# arPLS 6.19
-def arpls_baseline(raw_absorbance, lam=1e5, ratio=1e-6, max_iter=100):
+# arPLS_baseline
+def arpls_baseline(
+    raw_absorbance,
+    lam=1e5,
+    ratio=1e-6,
+    max_iter=100
+):
     """
     Estimate a baseline using asymmetrically reweighted penalized least squares.
 
     This implementation follows the arPLS algorithm proposed by Baek et al.
     """
+
     y = np.asarray(raw_absorbance, dtype=float)
     n = len(y)
 
     if n < 3:
         raise ValueError("arPLS requires at least 3 data points.")
 
-    diff_matrix = sparse.diags([1, -2, 1], [0, 1, 2], shape=(n - 2, n))
+    diff_matrix = sparse.diags(
+        [1.0, -2.0, 1.0],
+        [0, 1, 2],
+        shape=(n - 2, n),
+    )
+
     penalty_matrix = lam * diff_matrix.T @ diff_matrix
 
     weights = np.ones(n)
 
     for _ in range(max_iter):
-        weight_matrix = sparse.diags(weights, 0, shape=(n, n))
-        baseline = spsolve(weight_matrix + penalty_matrix, weights * y)
+
+        weight_matrix = sparse.diags(
+            weights,
+            0,
+            shape=(n, n),
+        )
+
+        # Convert sparse matrix to CSR format for efficient solving
+        system_matrix = (
+            weight_matrix + penalty_matrix
+        ).tocsr()
+
+        baseline = spsolve(
+            system_matrix,
+            weights * y,
+        )
 
         residual = y - baseline
-        negative_residual = residual[residual < 0]
+
+        negative_residual = residual[
+            residual < 0
+        ]
 
         if len(negative_residual) == 0:
             break
 
-        mean_negative = np.mean(negative_residual)
-        std_negative = np.std(negative_residual)
+        mean_negative = np.mean(
+            negative_residual
+        )
+
+        std_negative = np.std(
+            negative_residual
+        )
 
         if std_negative == 0:
             break
 
-        new_weights = 1 / (
-            1 + np.exp(2 * (residual - (2 * std_negative - mean_negative)) / std_negative)
+        # Numerically stable arPLS weight calculation
+        exponent = (
+            2
+            * (
+                residual
+                - (
+                    2 * std_negative
+                    - mean_negative
+                )
+            )
+            / std_negative
         )
 
-        if np.linalg.norm(new_weights - weights) / np.linalg.norm(weights) < ratio:
+        # Prevent overflow in exponential calculation
+        exponent = np.clip(
+            exponent,
+            -50,
+            50,
+        )
+
+        new_weights = 1 / (
+            1 + np.exp(exponent)
+        )
+
+        if (
+            np.linalg.norm(new_weights - weights)
+            /
+            np.linalg.norm(weights)
+            < ratio
+        ):
             weights = new_weights
             break
 
@@ -142,22 +200,75 @@ def arpls_baseline(raw_absorbance, lam=1e5, ratio=1e-6, max_iter=100):
 
     return baseline
 
-
 def arpls_baseline_second_deriv_weights(  # peak-position guided arPLS
     raw_absorbance,
     raw_wavenumber,
     peak_wavenumbers,
     lam=1e5,
     ratio=1e-6,
-    max_iter=100,
+    max_iter=50,
     peak_window=35,
     peak_weight=0.3,
     alpha=0.8,
 ):
     """
-    arPLS baseline correction using detected peak positions as soft prior weights.
-    Peak regions are down-weighted, but not completely excluded.
+    Estimate spectral baseline using peak-position guided arPLS.
+
+    This method extends the standard arPLS algorithm by introducing
+    peak-position dependent soft prior weights. Regions around detected
+    peaks are down-weighted during baseline estimation rather than
+    completely excluded, allowing spectral features to be preserved.
+
+    The final iterative weights are obtained by combining:
+    - residual-based arPLS weights
+    - peak-position prior weights
+
+    Parameters
+    ----------
+    raw_absorbance : array-like
+        Input absorbance spectrum.
+
+    raw_wavenumber : array-like
+        Corresponding wavenumber axis of the spectrum.
+
+    peak_wavenumbers : array-like
+        Detected peak positions used to construct peak-position
+        prior weights.
+
+    lam : float, optional
+        Smoothness parameter controlling the baseline penalty.
+
+    ratio : float, optional
+        Convergence threshold for iterative weight updating.
+
+    max_iter : int, optional
+        Maximum number of arPLS iterations.
+
+    peak_window : int, optional
+        Number of points around each detected peak affected by
+        the prior weighting.
+
+    peak_weight : float, optional
+        Weight assigned to peak regions. Lower values reduce the
+        influence of peaks during baseline estimation.
+
+    alpha : float, optional
+        Balance factor between arPLS residual weights and
+        peak-position prior weights.
+
+    Returns
+    -------
+    baseline : numpy.ndarray
+        Estimated baseline of the input spectrum.
+
+    Notes
+    -----
+    Peak regions are treated as soft constraints rather than removed
+    from the fitting process. This allows the method to reduce peak
+    influence while maintaining the original arPLS baseline estimation
+    framework.
     """
+
     y = np.asarray(raw_absorbance, dtype=float)
     x = np.asarray(raw_wavenumber, dtype=float)
 
@@ -166,7 +277,8 @@ def arpls_baseline_second_deriv_weights(  # peak-position guided arPLS
     if n < 3:
         raise ValueError("arPLS requires at least 3 data points.")
 
-    mask_weights = np.ones(n)
+    # Initialize peak-position prior weights
+    mask_weights = np.ones(n, dtype=float)
 
     for peak_wv in peak_wavenumbers:
         peak_idx = np.argmin(np.abs(x - peak_wv))
@@ -174,37 +286,88 @@ def arpls_baseline_second_deriv_weights(  # peak-position guided arPLS
         start = max(0, peak_idx - peak_window)
         end = min(n, peak_idx + peak_window + 1)
 
+        # Reduce the contribution of peak regions
         mask_weights[start:end] = peak_weight
 
-    diff_matrix = sparse.diags([1, -2, 1], [0, 1, 2], shape=(n - 2, n))
+    # Second-order difference penalty matrix
+    diff_matrix = sparse.diags(
+        [1.0, -2.0, 1.0],
+        [0, 1, 2],
+        shape=(n - 2, n),
+    )
+
     penalty_matrix = lam * diff_matrix.T @ diff_matrix
 
-    weights = np.ones(n)
+    # Initial arPLS weights
+    weights = np.ones(n, dtype=float)
 
     for _ in range(max_iter):
-        weight_matrix = sparse.diags(weights, 0, shape=(n, n))
-        baseline = spsolve(weight_matrix + penalty_matrix, weights * y)
+
+        weight_matrix = sparse.diags(
+            weights,
+            0,
+            shape=(n, n),
+        )
+
+        # Convert to CSR format for scipy sparse solver
+        system_matrix = (
+            weight_matrix + penalty_matrix
+        ).tocsr()
+
+        baseline = spsolve(
+            system_matrix,
+            weights * y,
+        )
 
         residual = y - baseline
-        negative_residual = residual[residual < 0]
+
+        negative_residual = residual[
+            residual < 0
+        ]
 
         if len(negative_residual) == 0:
             break
 
-        mean_negative = np.mean(negative_residual)
-        std_negative = np.std(negative_residual)
+        mean_negative = np.mean(
+            negative_residual
+        )
+
+        std_negative = np.std(
+            negative_residual
+        )
 
         if std_negative == 0:
             break
 
+        # Original arPLS residual-based weighting
         arpls_weights = 1 / (
-            1 + np.exp(2 * (residual - (2 * std_negative - mean_negative)) / std_negative)
+            1
+            + np.exp(
+                2
+                * (
+                    residual
+                    - (
+                        2 * std_negative
+                        - mean_negative
+                    )
+                )
+                / std_negative
+            )
         )
 
-        # Combine original arPLS weights with peak-position prior weights
-        new_weights = alpha * arpls_weights + (1 - alpha) * mask_weights
+        # Combine arPLS weights with peak-position prior weights
+        new_weights = (
+            alpha * arpls_weights
+            + (1 - alpha) * mask_weights
+        )
 
-        if np.linalg.norm(new_weights - weights) / np.linalg.norm(weights) < ratio:
+        # Convergence check
+        if (
+            np.linalg.norm(new_weights - weights)
+            /
+            np.linalg.norm(weights)
+            < ratio
+        ):
             weights = new_weights
             break
 

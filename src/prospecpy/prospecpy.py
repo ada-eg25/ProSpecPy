@@ -353,7 +353,7 @@ class ProSpecPy:  # class object running to organize script from the src directo
         else:
             print("Please set and save the thresholds and adjustment factor for baseline spline!")
 
-    # arPLS baseline correction method  6.19
+    # arPLS baseline correction method
     def subtract_baseline_arpls(
         self,
         lam=1e5,
@@ -364,7 +364,36 @@ class ProSpecPy:  # class object running to organize script from the src directo
         verbose=True,
     ):
         """
-        Baseline correction using arPLS.
+        Perform baseline correction using peak-guided arPLS.
+
+        Peak positions detected from the second derivative spectrum are used as soft prior weights to reduce the influence of spectral peaks during baseline estimation.
+        
+        The corrected spectrum is stored in the object and can be saved for subsequent peak analysis.
+
+        Parameters
+        ----------
+        lam : float, optional
+            Smoothness parameter for arPLS baseline estimation.
+
+        ratio : float, optional
+            Convergence tolerance for iterative weight updating.
+
+        max_iter : int, optional
+            Maximum number of arPLS iterations.
+
+        save : bool, optional
+            Whether to save corrected spectra and peak information.
+
+        showplot : bool, optional
+            Whether to display the baseline correction plot.
+
+        verbose : bool, optional
+            Whether to print output information.
+        
+        Returns
+        -------
+        corrected : numpy.ndarray
+            Baseline-corrected absorbance spectrum.
         """
 
         raw_x, raw_y = raw_spline(
