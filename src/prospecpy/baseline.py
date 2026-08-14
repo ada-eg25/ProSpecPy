@@ -211,13 +211,15 @@ def arpls_baseline_second_deriv_weights(  # peak-position guided arPLS
     peak_weight=0.3,
     alpha=0.8,
 ):
+    
     """
-    Estimate spectral baseline using peak-position guided arPLS.
+    Estimate spectral baseline using a peak-position guided arPLS method.
 
     This method extends the standard arPLS algorithm by introducing
     peak-position dependent soft prior weights. Regions around detected
     peaks are down-weighted during baseline estimation rather than
-    completely excluded, allowing spectral features to be preserved.
+    completely excluded, allowing important spectral features to be
+    preserved.
 
     The final iterative weights are obtained by combining:
     - residual-based arPLS weights
@@ -239,22 +241,22 @@ def arpls_baseline_second_deriv_weights(  # peak-position guided arPLS
         Smoothness parameter controlling the baseline penalty.
 
     ratio : float, optional
-        Convergence threshold for iterative weight updating.
+        Relative convergence threshold for iterative weight updating.
 
     max_iter : int, optional
         Maximum number of arPLS iterations.
 
     peak_window : int, optional
-        Number of points around each detected peak affected by
-        the prior weighting.
+        Number of data points on each side of detected peaks
+        affected by the prior weighting.
 
     peak_weight : float, optional
         Weight assigned to peak regions. Lower values reduce the
-        influence of peaks during baseline estimation.
+        contribution of peak regions while retaining soft constraints.
 
     alpha : float, optional
-        Balance factor between arPLS residual weights and
-        peak-position prior weights.
+        Balance factor controlling the contribution of arPLS
+        residual weights and peak-position prior weights.
 
     Returns
     -------
@@ -268,7 +270,7 @@ def arpls_baseline_second_deriv_weights(  # peak-position guided arPLS
     influence while maintaining the original arPLS baseline estimation
     framework.
     """
-
+    
     y = np.asarray(raw_absorbance, dtype=float)
     x = np.asarray(raw_wavenumber, dtype=float)
 

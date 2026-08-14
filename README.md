@@ -62,6 +62,38 @@ interested in contributing, please check out our open
 [issues](https://github.com/ProSpecPy/ProSpecPy/issues) and fork the repository
 to begin making changes within our object-oriented architecture.
 
+## Peak-guided arPLS baseline correction method
+
+This project introduces a peak-guided arPLS baseline correction method
+integrated into the ProSpecPy workflow for hydrogenase FTIR spectra.
+
+The method extends the standard arPLS algorithm by incorporating
+peak-position dependent soft prior weights. Instead of removing peak
+regions, the contribution of detected peaks is reduced during baseline
+estimation, allowing important spectral features to be preserved.
+
+### Selected parameters
+
+The optimal parameters were selected through sensitivity analysis:
+
+| Parameter | Selected value |
+|-----------|----------------|
+| λ | 1e5 |
+| peak_weight | 0.3 |
+| peak_window | 35 |
+| alpha | 0.8 |
+
+### Performance evaluation
+
+The peak-guided arPLS method was evaluated on 19 experimental FTIR spectra.
+
+Results:
+
+- Successful corrections: 19/19
+- Success rate: 100%
+- Average runtime: 0.037 s per spectrum
+- Maximum runtime: 0.082 s
+
 ## License
 
 This project is licensed under the BSD 3-Clause License - see the
