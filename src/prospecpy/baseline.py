@@ -440,10 +440,6 @@ def plot_baseline_corrected_data(
         ax.set_title(f"{sample_name}")
     ax.set_xlabel("wavenumber ($cm^{-1}$)")
     ax.set_ylabel("absorbance")
-
-    # FTIR convention: decreasing wavenumber from left to right
-    ax.invert_xaxis()
-
     ax.legend()
     if showplots:
         plt.show()
