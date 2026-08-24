@@ -1,0 +1,10 @@
+group,metric,value,notes
+within_50mV,matched_peak_count,26.0,potential_gap_mV <= 50
+within_50mV,unique_sample_count,14.0,potential_gap_mV <= 50
+within_50mV,centre_MAE_cm1,0.890146924042728,Mean absolute peak-centre error.
+within_50mV,centre_median_absolute_error_cm1,1.0505905474079782,Median absolute peak-centre error.
+within_50mV,centre_max_absolute_error_cm1,1.484031513844002,Largest peak-centre error.
+within_50mV,height_MAE,0.025587177374308403,Mean absolute peak-height error.
+within_50mV,height_median_absolute_error,0.023500034779346,Median absolute peak-height error.
+within_50mV,height_mean_relative_error_percent,92.92174837945389,Mean row-wise relative height error; can be inflated by very small manual heights.
+within_50mV,height_normalized_aggregate_error,0.6743979601119341,sum(abs(asPLS-manual)) / sum(abs(manual)); more stable than averaging row-wise percentages.

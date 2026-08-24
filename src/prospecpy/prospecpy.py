@@ -14,6 +14,7 @@ from prospecpy.anchor_points import (
 )
 from prospecpy.baseline import (
     arpls_baseline_second_deriv_weights,  # 7.1 arPLS
+    aspls_baseline,                      # 7.28 asPLS
     baseline_correction,
     baseline_spline,
     get_baseline_peak_index,
@@ -454,6 +455,127 @@ class ProSpecPy:  # class object running to organize script from the src directo
 
         return corrected
 
+    def subtract_baseline_aspls(           # 7.28 asPLS
+        self,
+        lam=1e5,
+        diff_order=2,
+        max_iter=100,
+        tol=1e-3,
+        asymmetric_coef=0.5,
+        save=True,
+        showplot=True,
+        verbose=True,
+    ):
+        """
+        Baseline correction using adaptive smoothness penalized
+        least squares (asPLS).
+        """
+
+        raw_x, raw_y = raw_spline(
+            self.get_subtracted_spectra_wavenumber(),
+            self.get_subtracted_spectra_absorbance(),
+        )
+
+        baseline, params = aspls_baseline(
+            raw_y,
+            lam=lam,
+            diff_order=diff_order,
+            max_iter=max_iter,
+            tol=tol,
+            asymmetric_coef=asymmetric_coef,
+        )
+
+        corrected = raw_y - baseline
+        corrected[corrected < 0] = 0
+
+        self.baseline_curve = baseline
+        self.baseline_corrected_abs = corrected
+        self.aspls_params = params
+
+        peak_wv, _ = get_peaks_absorbance(
+            self.second_deriv_peak_dict["peak_wavenumber"],
+            raw_x,
+            raw_y,
+        )
+
+        (
+            peak_wv_index,
+            peak_wv_baseline,
+            peak_baseline_abs,
+        ) = get_baseline_peak_index(
+            corrected,
+            raw_x,
+            peak_wv,
+        )
+
+        self.peak_width_half_height = get_peak_wid_at_half_height(
+            corrected,
+            peak_wv_index,
+        )
+
+        self.baseline_corrected_peak_dict["peak_index"] = peak_wv_index
+        self.baseline_corrected_peak_dict["wavenumber"] = peak_wv_baseline
+        self.baseline_corrected_peak_dict["absorbance"] = peak_baseline_abs
+
+        corrected_fig = plot_baseline_corrected_data(
+            raw_x,
+            corrected,
+            peak_wv_baseline,
+            peak_baseline_abs,
+            self.sample_name,
+            self.batch_id,
+            showplot,
+        )
+
+        if save:
+            self.save_plot(
+                corrected_fig,
+                "aspls_baseline_subtracted_spectra",
+                verbose=verbose,
+            )
+
+            data_df = pd.DataFrame(
+                {
+                    "wavenumber": raw_x,
+                    "absorbance": corrected,
+                    "estimated_baseline": baseline,
+                }
+            )
+
+            data_filename = "aspls_baseline_corrected_data.csv"
+            data_df.to_csv(
+                os.path.join(self.output_folder, data_filename),
+                index=False,
+            )
+
+            peak_filename = os.path.join(
+                self.output_folder,
+                "aspls_baseline_corrected_peak_info.csv",
+            )
+
+            keys = self.baseline_corrected_peak_dict.keys()
+            values = zip(
+                *self.baseline_corrected_peak_dict.values(),
+                strict=False,
+            )
+
+            with open(peak_filename, "w", newline="") as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(keys)
+                writer.writerows(values)
+
+            if verbose:
+                print(
+                    f"asPLS corrected data saved to "
+                    f"{os.path.join(self.output_folder, data_filename)}"
+                )
+                print(f"asPLS peak information saved to {peak_filename}")
+
+        return corrected
+
+
+
+    
     # Section 6: Gaussian and Lorentzian fitting methods
     def gaussian_fit_baseline(self, save=True, showplot=True, verbose=True):
         if self.baseline_corrected_abs is not None:

@@ -7,6 +7,7 @@ from scipy import sparse  # arPLS 6.19
 from scipy.interpolate import UnivariateSpline
 from scipy.signal import find_peaks
 from scipy.sparse.linalg import spsolve  # arPLS 6.19
+from pybaselines import Baseline   # asPLS 7.28
 
 from prospecpy.second_deriv import flip_order
 
@@ -212,6 +213,64 @@ def arpls_baseline_second_deriv_weights(  # peak-position guided arPLS
 
     return baseline
 
+def aspls_baseline(                  # asPLS  7.28
+    raw_absorbance,
+    lam=1e5,
+    diff_order=2,
+    max_iter=100,
+    tol=1e-3,
+    asymmetric_coef=0.5,
+):
+    """
+    Estimate the baseline using adaptive smoothness penalized
+    least squares (asPLS).
+
+    Parameters
+    ----------
+    raw_absorbance : array-like
+        Absorbance values of the spectrum.
+    lam : float
+        Initial smoothing parameter. Larger values produce
+        smoother baselines.
+    diff_order : int
+        Difference order used for the smoothness penalty.
+    max_iter : int
+        Maximum number of iterations.
+    tol : float
+        Convergence tolerance.
+    asymmetric_coef : float
+        Controls the steepness of the asymmetric weighting curve.
+
+    Returns
+    -------
+    baseline : numpy.ndarray
+        Estimated baseline.
+    params : dict
+        Final weights, local smoothing factors and convergence history.
+    """
+    y = np.asarray(raw_absorbance, dtype=float)
+
+    if y.ndim != 1:
+        raise ValueError("asPLS input must be a one-dimensional array.")
+
+    if len(y) < 3:
+        raise ValueError("asPLS requires at least 3 data points.")
+
+    if not np.all(np.isfinite(y)):
+        raise ValueError("asPLS input contains NaN or infinite values.")
+
+    fitter = Baseline()
+
+    baseline, params = fitter.aspls(
+        y,
+        lam=lam,
+        diff_order=diff_order,
+        max_iter=max_iter,
+        tol=tol,
+        asymmetric_coef=asymmetric_coef,
+    )
+
+    return baseline, params
 
 def get_baseline_peak_index(baseline_corrected_abs, rawdata_wavenumber, raw_data_peak_wv):
     # get all the peaks index in the baselinecorrected data with no thresholds

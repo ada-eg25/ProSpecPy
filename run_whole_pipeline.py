@@ -2,9 +2,11 @@
 """
 
 Minimum input:
-    A directory containing ProSpecPy outputs with files named
-    arpls_baseline_corrected_data.csv and, optionally,
-    arpls_baseline_corrected_peak_info.csv.
+    A directory containing ProSpecPy asPLS baseline outputs:
+    - aspls_baseline_corrected_data.csv
+    - aspls_baseline_corrected_peak_info.csv
+
+    The input directory is scanned recursively.
 
 Main output:
     erni_inputs/baseline_metadata.csv
@@ -165,7 +167,7 @@ def parse_args() -> argparse.Namespace:
         "--erni-output-root",
         type=Path,
         help=(
-            "Directory containing Erni native arPLS outputs to scan recursively. "
+            "Directory containing Erni native asPLS outputs to scan recursively. "
             "Not needed if --erni-metadata is provided."
         ),
     )
@@ -182,19 +184,19 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help=(
             "Optional control baseline_metadata.csv in the same contract. "
-            "Use this for initial anchor+spline vs Erni arPLS comparison."
+            "Use this for initial anchor+spline vs Erni asPLS comparison."
         ),
     )
     input_group.add_argument(
-        "--run-native-arpls",
+        "--run-native-aspls",
         action="store_true",
-        help="Optionally run Erni's ProSpecPy arPLS workflow from raw pD6 data first.",
+        help="Optionally run Erni's ProSpecPy asPLS workflow from raw pH6 data first.",
     )
     input_group.add_argument(
         "--workflow-root",
         type=Path,
         default=Path("/Users/lili/Desktop/IC irp/ProSpecPy-irp-initial-exploration"),
-        help="Root containing data/opus_files/pD6 and data/opus_files/water_vapor.",
+        help="Root containing data/opus_files/pH6 and data/opus_files/water_vapor.",
     )
     input_group.add_argument(
         "--source-repo",
@@ -216,26 +218,71 @@ def parse_args() -> argparse.Namespace:
     fitting_group = parser.add_argument_group("fitting")
     fitting_group.add_argument("--analysis-min-cm1", type=float, default=ANALYSIS_MIN_CM1)
     fitting_group.add_argument("--analysis-max-cm1", type=float, default=ANALYSIS_MAX_CM1)
-    fitting_group.add_argument("--bound-profile-id", default="pD6_bounds_v0.1")
+    fitting_group.add_argument("--bound-profile-id", default="pH6_bounds_v0.1")
     fitting_group.add_argument("--peak-prominence-fraction", type=float, default=0.08)
     fitting_group.add_argument("--min-peak-distance-cm1", type=float, default=8.0)
     fitting_group.add_argument("--max-peaks", type=int, default=8)
     fitting_group.add_argument("--maxfev", type=int, default=20000)
 
-    arpls_group = parser.add_argument_group("Erni arPLS metadata defaults")
-    arpls_group.add_argument("--baseline-family", default="arPLS")
-    arpls_group.add_argument("--baseline-method", default="peak_guided_arPLS")
-    arpls_group.add_argument("--baseline-implementation", default="Erni_ProSpecPy_week6")
-    arpls_group.add_argument("--config-source", default="Erni workflow_demo.ipynb Week 6 default")
-    arpls_group.add_argument("--lam", type=float, default=1e5)
-    arpls_group.add_argument("--ratio", type=float, default=1e-6)
-    arpls_group.add_argument("--max-iter", type=int, default=50)
-    arpls_group.add_argument("--peak-threshold", type=float, default=0.35)
-    arpls_group.add_argument("--peak-window", type=int, default=35)
-    arpls_group.add_argument("--peak-weight", type=float, default=0.3)
-    arpls_group.add_argument("--alpha", type=float, default=0.8)
-    arpls_group.add_argument("--range-start", type=int, default=2150)
-    arpls_group.add_argument("--range-end", type=int, default=1850)
+    baseline_group = parser.add_argument_group(
+        "asPLS metadata and parameters"
+    )
+    baseline_group.add_argument(
+        "--baseline-family",
+        default="asPLS",
+    )
+    baseline_group.add_argument(
+        "--baseline-method",
+        default="adaptive_smoothness_PLS",
+    )
+    baseline_group.add_argument(
+        "--baseline-implementation",
+        default="Erni_ProSpecPy_asPLS",
+    )
+    baseline_group.add_argument(
+        "--config-source",
+        default="workflow_demo.ipynb",
+    )
+    baseline_group.add_argument(
+        "--lam",
+        type=float,
+        default=1e5,
+    )
+    baseline_group.add_argument(
+        "--diff-order",
+        type=int,
+        default=2,
+    )
+    baseline_group.add_argument(
+        "--max-iter",
+        type=int,
+        default=100,
+    )
+    baseline_group.add_argument(
+        "--tol",
+        type=float,
+        default=1e-3,
+    )
+    baseline_group.add_argument(
+        "--asymmetric-coef",
+        type=float,
+        default=0.5,
+    )
+    baseline_group.add_argument(
+        "--peak-threshold",
+        type=float,
+        default=0.35,
+    )
+    baseline_group.add_argument(
+        "--range-start",
+        type=int,
+        default=2150,
+    )
+    baseline_group.add_argument(
+        "--range-end",
+        type=int,
+        default=1850,
+    )
     return parser.parse_args()
 
 
@@ -325,21 +372,43 @@ def finite_numbers(values: list[str]) -> list[float]:
     return numbers
 
 
+def infer_baseline_kind(source: Path) -> str:
+    """Validate that the source is an asPLS baseline output file."""
+    if source.name.lower().startswith("aspls_"):
+        return "aspls"
+    raise ValueError(
+        f"Unsupported asPLS baseline output filename: {source.name}"
+    )
+
+
+def resolved_baseline_metadata(
+    args: argparse.Namespace,
+) -> tuple[str, str, str]:
+    return (
+        args.baseline_family,
+        args.baseline_method,
+        args.baseline_implementation,
+    )
+
+
 def baseline_config(args: argparse.Namespace) -> str:
-    config = {
-        "baseline_family": args.baseline_family,
-        "baseline_method": args.baseline_method,
-        "baseline_implementation": args.baseline_implementation,
+    family, method, implementation = resolved_baseline_metadata(args)
+    config: dict[str, object] = {
+        "baseline_family": family,
+        "baseline_method": method,
+        "baseline_implementation": implementation,
         "config_source": args.config_source,
         "lam": args.lam,
-        "ratio": args.ratio,
+        "diff_order": args.diff_order,
         "max_iter": args.max_iter,
-        "peak_threshold": args.peak_threshold,
-        "peak_window": args.peak_window,
-        "peak_weight": args.peak_weight,
-        "alpha": args.alpha,
+        "tol": args.tol,
+        "asymmetric_coef": args.asymmetric_coef,
     }
-    return json.dumps(config, separators=(",", ":"), sort_keys=True)
+    return json.dumps(
+        config,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
 
 
 def sample_id_from_output_folder(path: Path) -> str:
@@ -419,9 +488,9 @@ def write_candidate_peaks(source: Path, dest: Path) -> None:
             )
 
 
-def run_native_arpls(args: argparse.Namespace, native_output: Path) -> None:
+def run_native_aspls(args: argparse.Namespace, native_output: Path) -> None:
     source = args.source_repo / "src"
-    sample_dir = args.workflow_root / "data" / "opus_files" / "pD6"
+    sample_dir = args.workflow_root / "data" / "opus_files" / "pH6"
     water_dir = args.workflow_root / "data" / "opus_files" / "water_vapor"
     for required in (source, sample_dir, water_dir):
         if not required.exists():
@@ -456,13 +525,12 @@ def run_native_arpls(args: argparse.Namespace, native_output: Path) -> None:
     )
     for obj in spectra:
         obj.peak_finder(args.peak_threshold)
-        obj.subtract_baseline_arpls(
+        obj.subtract_baseline_aspls(
             lam=args.lam,
-            ratio=args.ratio,
+            diff_order=args.diff_order,
             max_iter=args.max_iter,
-            peak_window=args.peak_window,
-            peak_weight=args.peak_weight,
-            alpha=args.alpha,
+            tol=args.tol,
+            asymmetric_coef=args.asymmetric_coef,
             save=True,
             showplot=False,
             verbose=False,
@@ -477,52 +545,70 @@ def run_native_arpls(args: argparse.Namespace, native_output: Path) -> None:
         "baseline_implementation": args.baseline_implementation,
         "config_source": args.config_source,
         "lam": args.lam,
-        "ratio": args.ratio,
+        "diff_order": args.diff_order,
         "max_iter": args.max_iter,
+        "tol": args.tol,
+        "asymmetric_coef": args.asymmetric_coef,
         "peak_threshold": args.peak_threshold,
-        "peak_window": args.peak_window,
-        "peak_weight": args.peak_weight,
-        "alpha": args.alpha,
         "sample_count": len(spectra),
     }
-    (native_output / "erni_arpls_run_metadata.json").write_text(
+    (native_output / "erni_aspls_run_metadata.json").write_text(
         json.dumps(metadata, indent=2), encoding="utf-8"
     )
 
 
-def prepare_erni_inputs(args: argparse.Namespace, erni_root: Path, output_dir: Path) -> Path:
+def prepare_erni_inputs(
+    args: argparse.Namespace,
+    erni_root: Path,
+    output_dir: Path,
+) -> Path:
     prepare_dir(output_dir, args.overwrite)
     (output_dir / "corrected_spectra").mkdir(exist_ok=True)
     (output_dir / "candidate_peaks").mkdir(exist_ok=True)
 
-    source_files = sorted(erni_root.rglob("arpls_baseline_corrected_data.csv"))
+    source_files = sorted(
+        erni_root.rglob("aspls_baseline_corrected_data.csv")
+    )
     if not source_files:
         raise FileNotFoundError(
-            f"No arpls_baseline_corrected_data.csv files found under {erni_root}"
+            "No aspls_baseline_corrected_data.csv files found under "
+            f"{erni_root}"
         )
 
     seen_run_ids: set[str] = set()
     metadata_rows: list[dict[str, str]] = []
+
     for source in source_files:
+        infer_baseline_kind(source)
         sample_id = sample_id_from_output_folder(source)
-        base_run_id = f"erni-arpls-{slug(sample_id)}"
+
+        base_run_id = f"erni-aspls-{slug(sample_id)}"
         run_id = base_run_id
         suffix = 2
+
         while run_id in seen_run_ids:
             run_id = f"{base_run_id}-{suffix}"
             suffix += 1
+
         seen_run_ids.add(run_id)
 
         spectrum_dest_name = f"{run_id}.csv"
         qc_pass, qc_reason, zero_fraction = write_standard_spectrum(
-            source, output_dir / "corrected_spectra" / spectrum_dest_name
+            source,
+            output_dir / "corrected_spectra" / spectrum_dest_name,
         )
 
         candidate_peak_file = ""
-        peak_source = source.with_name("arpls_baseline_corrected_peak_info.csv")
+        peak_source = source.with_name(
+            "aspls_baseline_corrected_peak_info.csv"
+        )
+
         if peak_source.exists():
             peak_dest_name = f"{run_id}_candidate_peaks.csv"
-            write_candidate_peaks(peak_source, output_dir / "candidate_peaks" / peak_dest_name)
+            write_candidate_peaks(
+                peak_source,
+                output_dir / "candidate_peaks" / peak_dest_name,
+            )
             candidate_peak_file = f"candidate_peaks/{peak_dest_name}"
 
         metadata_rows.append(
@@ -532,9 +618,13 @@ def prepare_erni_inputs(args: argparse.Namespace, erni_root: Path, output_dir: P
                 "raw_file": source.parent.name,
                 "baseline_family": args.baseline_family,
                 "baseline_method": args.baseline_method,
-                "baseline_implementation": args.baseline_implementation,
+                "baseline_implementation": (
+                    args.baseline_implementation
+                ),
                 "baseline_config_json": baseline_config(args),
-                "corrected_spectrum_file": f"corrected_spectra/{spectrum_dest_name}",
+                "corrected_spectrum_file": (
+                    f"corrected_spectra/{spectrum_dest_name}"
+                ),
                 "baseline_qc_pass": qc_pass,
                 "baseline_qc_reason": qc_reason,
                 "input_qc_pass": "TRUE",
@@ -545,18 +635,26 @@ def prepare_erni_inputs(args: argparse.Namespace, erni_root: Path, output_dir: P
                 "zero_clipping_fraction": zero_fraction,
                 "candidate_peak_file": candidate_peak_file,
                 "notes": (
-                    "Prepared from Erni Week 6 arPLS output; baseline QC is "
-                    "provisional numeric availability QC, not a validated "
-                    "baseline-quality threshold."
+                    "Prepared from Erni asPLS output; baseline QC is "
+                    "provisional numeric availability QC, not a "
+                    "validated baseline-quality threshold."
                 ),
             }
         )
 
     metadata_path = output_dir / "baseline_metadata.csv"
-    with metadata_path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(metadata_rows[0]))
+    with metadata_path.open(
+        "w",
+        newline="",
+        encoding="utf-8",
+    ) as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=list(metadata_rows[0]),
+        )
         writer.writeheader()
         writer.writerows(metadata_rows)
+
     return metadata_path
 
 
@@ -1540,7 +1638,7 @@ def make_plots(
             sharex=True,
             gridspec_kw={"height_ratios": [3, 1]},
         )
-        axes[0].plot(x, y, color="#222222", linewidth=1.4, label="arPLS corrected spectrum")
+        axes[0].plot(x, y, color="#222222", linewidth=1.4, label="asPLS corrected spectrum")
         axes[0].plot(x, fit_y, color="#D55E00", linewidth=1.3, label="Gaussian total fit")
         centres = [
             float(row["fitted_centre_cm1"])
@@ -1559,7 +1657,7 @@ def make_plots(
             axes[0].axvline(centre, color="#0072B2", alpha=0.18, linewidth=0.8)
         axes[0].set_ylabel("Corrected absorbance")
         axes[0].set_title(
-            f"Sample {attempt['sample_id']}: arPLS Gaussian {label.replace('_', ' ')}"
+            f"Sample {attempt['sample_id']}: asPLS Gaussian {label.replace('_', ' ')}"
         )
         axes[0].legend(loc="best", fontsize=8)
         style_axes(axes[0])
@@ -1585,7 +1683,7 @@ def make_plots(
         style_axes(axes[1])
         axes[1].invert_xaxis()
         fig.tight_layout()
-        path = plot_dir / f"sample_{attempt['sample_id']}_arpls_gaussian_{label}.png"
+        path = plot_dir / f"sample_{attempt['sample_id']}_aspls_gaussian_{label}.png"
         fig.savefig(path, dpi=220)
         plt.close(fig)
         manifest.append(str(path))
@@ -1604,28 +1702,28 @@ def make_plots(
             ex, ey = read_xy(erni_path)
             fig, ax = plt.subplots(1, 1, figsize=(9.5, 4.8))
             ax.plot(cx, cy, color="#0072B2", linewidth=1.4, label="control corrected spectrum")
-            ax.plot(ex, ey, color="#D55E00", linewidth=1.4, label="Erni arPLS corrected spectrum")
-            ax.set_title(f"Sample {good['sample_id']}: control vs Erni arPLS corrected spectra")
+            ax.plot(ex, ey, color="#D55E00", linewidth=1.4, label="Erni asPLS corrected spectrum")
+            ax.set_title(f"Sample {good['sample_id']}: control vs Erni asPLS corrected spectra")
             ax.set_xlabel("Wavenumber (cm$^{-1}$)")
             ax.set_ylabel("Corrected absorbance")
             ax.legend(loc="best", fontsize=8)
             style_axes(ax)
             ax.invert_xaxis()
             fig.tight_layout()
-            path = plot_dir / f"sample_{good['sample_id']}_control_vs_arpls_input.png"
+            path = plot_dir / f"sample_{good['sample_id']}_control_vs_aspls_input.png"
             fig.savefig(path, dpi=220)
             plt.close(fig)
             manifest.insert(0, str(path))
 
     (plot_dir / "plot_manifest.txt").write_text("\n".join(manifest) + "\n", encoding="utf-8")
     captions = [
-        "The downstream wrapper can consume Erni arPLS-corrected spectra and export valid peak parameters.",
+        "The downstream wrapper can consume Erni asPLS-corrected spectra and export valid peak parameters.",
         "Residual plots are included to separate rule-level validity from residual-pattern review.",
     ]
     if control_metadata is not None:
         captions.insert(
             0,
-            "Control and Erni arPLS corrected spectra are plotted for matched samples when available.",
+            "Control and Erni asPLS corrected spectra are plotted for matched samples when available.",
         )
     (plot_dir / "figure_captions.txt").write_text("\n".join(captions) + "\n", encoding="utf-8")
 
@@ -1641,28 +1739,28 @@ def main() -> None:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    native_output = args.output_dir / "erni_arpls_native_outputs"
+    native_output = args.output_dir / "erni_aspls_native_outputs"
     erni_input_dir = args.output_dir / "erni_inputs"
     erni_fit_dir = args.output_dir / "erni_fitting_outputs"
     control_fit_dir = args.output_dir / "control_fitting_outputs"
-    comparison_output = args.output_dir / "control_vs_erni_arpls_comparison_summary.csv"
+    comparison_output = args.output_dir / "control_vs_erni_aspls_comparison_summary.csv"
     plot_dir = args.output_dir / "report_plots"
 
-    if args.run_native_arpls:
-        print("Running Erni native arPLS workflow...")
-        run_native_arpls(args, native_output)
+    if args.run_native_aspls:
+        print("Running Erni native asPLS workflow...")
+        run_native_aspls(args, native_output)
         erni_metadata = prepare_erni_inputs(args, native_output, erni_input_dir)
     elif args.erni_metadata is not None:
         erni_metadata = args.erni_metadata
     else:
         if args.erni_output_root is None:
-            raise SystemExit("Provide --erni-output-root, --erni-metadata, or --run-native-arpls.")
+            raise SystemExit("Provide --erni-output-root, --erni-metadata, or --run-native-aspls.")
         erni_metadata = prepare_erni_inputs(args, args.erni_output_root, erni_input_dir)
 
-    print("Running downstream fitting/QC on Erni arPLS spectra...")
+    print("Running downstream fitting/QC on Erni asPLS spectra...")
     run_fitting(erni_metadata, erni_fit_dir, args)
     validate_three_tables(erni_fit_dir)
-    print_counts("Erni arPLS", erni_fit_dir)
+    print_counts("Erni asPLS", erni_fit_dir)
 
     if args.control_metadata is not None:
         print("Running downstream fitting/QC on control spectra...")
@@ -1674,7 +1772,7 @@ def main() -> None:
             control_fit_dir,
             erni_fit_dir,
             label_a="control",
-            label_b="erni_arpls",
+            label_b="erni_aspls",
         )
         print(f"Comparison summary: {comparison_output}")
 
